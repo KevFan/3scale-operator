@@ -20,6 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	threescaleapi "github.com/3scale/3scale-porta-go-client/client"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	capabilitiesv1beta1 "github.com/3scale/3scale-operator/apis/capabilities/v1beta1"
 	controllerhelper "github.com/3scale/3scale-operator/pkg/controller/helper"
@@ -35,6 +40,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
+
+const developerUserFinalizer = "developeruser.capabilities.3scale.net/finalizer"
 
 // DeveloperUserReconciler reconciles a DeveloperUser object
 type DeveloperUserReconciler struct {
@@ -74,10 +81,59 @@ func (r *DeveloperUserReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 		reqLogger.V(1).Info(string(jsonData))
 	}
 
+	// DeveloperUser has been marked for deletion
+	if developerUserCR.GetDeletionTimestamp() != nil && controllerutil.ContainsFinalizer(developerUserCR, developerUserFinalizer) {
+		err = r.removeDeveloperUserFrom3scale(developerUserCR)
+		if err != nil {
+			r.EventRecorder().Eventf(developerUserCR, corev1.EventTypeWarning, "Failed to delete developer user", "%v", err)
+			return ctrl.Result{}, err
+		}
+
+		controllerutil.RemoveFinalizer(developerUserCR, developerUserFinalizer)
+		err = r.UpdateResource(developerUserCR)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	}
+
 	// Ignore deleted resource, this can happen when foregroundDeletion is enabled
 	// https://kubernetes.io/docs/concepts/workloads/controllers/garbage-collection/#foreground-cascading-deletion
 	if developerUserCR.DeletionTimestamp != nil {
 		return ctrl.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(developerUserCR, developerUserFinalizer) {
+		controllerutil.AddFinalizer(developerUserCR, developerUserFinalizer)
+		err = r.UpdateResource(developerUserCR)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
+	providerAccount, err := controllerhelper.LookupProviderAccount(r.Client(), developerUserCR.GetNamespace(), developerUserCR.Spec.ProviderAccountRef, r.Logger())
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Retrieve ownersReference of tenant CR that owns the DeveloperUser CR
+	tenantCR, err := controllerhelper.RetrieveTenantCR(providerAccount, r.Client(), r.Logger(), developerUserCR.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// If tenant CR is found, set it's ownersReference as ownerReference in the DeveloperUser CR
+	if tenantCR != nil {
+		updated, err := controllerhelper.SetOwnersReference(developerUserCR, r.Client(), tenantCR)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if updated {
+			return ctrl.Result{Requeue: true}, nil
+		}
 	}
 
 	statusReconciler, reconcileErr := r.reconcileSpec(developerUserCR, reqLogger)
@@ -206,6 +262,37 @@ func (r *DeveloperUserReconciler) findParentAccount(userCR *capabilitiesv1beta1.
 	}
 
 	return devAccountCR, nil
+}
+
+func (r *DeveloperUserReconciler) removeDeveloperUserFrom3scale(developerUser *capabilitiesv1beta1.DeveloperUser) error {
+	logger := r.Logger().WithValues("developerUser", client.ObjectKey{Name: developerUser.Name, Namespace: developerUser.Namespace})
+
+	// Attempt to remove developerUser only if developerUser.Status.ID is present
+	if developerUser.Status.ID == nil {
+		logger.Info("could not remove developerUser because ID is missing in status")
+		return nil
+	}
+
+	providerAccount, err := controllerhelper.LookupProviderAccount(r.Client(), developerUser.Namespace, developerUser.Spec.ProviderAccountRef, logger)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("product not deleted from 3scale, provider account not found")
+			return nil
+		}
+		return err
+	}
+
+	threescaleAPIClient, err := controllerhelper.PortaClient(providerAccount)
+	if err != nil {
+		return err
+	}
+
+	err = threescaleAPIClient.DeleteDeveloperUser(*developerUser.Status.AccountID, *developerUser.Status.ID)
+	if err != nil && !threescaleapi.IsNotFound(err) {
+		return err
+	}
+
+	return nil
 }
 
 func (r *DeveloperUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
