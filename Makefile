@@ -105,9 +105,9 @@ $(KUSTOMIZE):
 kustomize: $(KUSTOMIZE)
 
 OPERATOR_SDK = $(PROJECT_PATH)/bin/operator-sdk
-# Note: release file patterns changed after v1.3.0
+# Note: release file patterns changed after v1.4.0
 # More info https://sdk.operatorframework.io/docs/installation/
-OPERATOR_SDK_VERSION=v1.3.0
+OPERATOR_SDK_VERSION=v1.4.0
 $(OPERATOR_SDK):
 	curl -sSL https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk-${OPERATOR_SDK_VERSION}-$(ARCH)-${OS} -o $(OPERATOR_SDK)
 	chmod +x $(OPERATOR_SDK)
@@ -159,7 +159,7 @@ docker-build: test docker-build-only
 
 .PHONY: docker-build-only
 docker-build-only:
-	$(DOCKER) build . -t ${IMG}
+	$(DOCKER) build -t ${IMG} .
 
 # Push the operator docker image
 .PHONY: operator-image-push
