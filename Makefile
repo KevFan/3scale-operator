@@ -327,7 +327,7 @@ prometheusrules-update-test: prometheus-rules
 	git diff --exit-code ./doc/prometheusrules
 	[ -z "$$(git ls-files --other --exclude-standard --directory --no-empty-directory ./doc/prometheusrules)" ]
 
-# go-bin-install will 'go get' any package $2 and install it to $1.
+# go-bin-install will 'go install' any package $2 and install it to $1.
 define go-bin-install
 @[ -f $(1) ] || { \
 set -e ;\
