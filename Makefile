@@ -1,8 +1,9 @@
 SHELL := /bin/bash
 # Current Operator version
 VERSION ?= 0.0.1
+IMAGE_TAG_BASE ?= quay.io/3scale-operator
 # Default bundle image tag
-BUNDLE_IMG ?= controller-bundle:$(VERSION)
+BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 # Options for 'bundle-build'
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
@@ -12,8 +13,8 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-OS := $(shell uname | awk '{print tolower($$0)}' | sed -e s/linux/linux-gnu/ )
-ARCH := $(shell uname -m)
+OS := $(shell go env GOOS)
+ARCH := $(shell go env GOARCH)
 
 # Image URL to use all building/pushing image targets
 IMG ?= quay.io/3scale/3scale-operator:master
@@ -105,9 +106,9 @@ $(KUSTOMIZE):
 kustomize: $(KUSTOMIZE)
 
 OPERATOR_SDK = $(PROJECT_PATH)/bin/operator-sdk
-# Note: release file patterns changed after v1.5.0
+# Note: release file patterns changed after v1.6.1
 # More info https://sdk.operatorframework.io/docs/installation/
-OPERATOR_SDK_VERSION=v1.5.0
+OPERATOR_SDK_VERSION=v1.6.1
 $(OPERATOR_SDK):
 	curl -sSL https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk-${OPERATOR_SDK_VERSION}-$(ARCH)-${OS} -o $(OPERATOR_SDK)
 	chmod +x $(OPERATOR_SDK)
@@ -301,3 +302,28 @@ GOBIN=$(PROJECT_PATH)/bin go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+.PHONY: opm
+OPM = ./bin/opm
+opm:
+ifeq (,$(wildcard $(OPM)))
+ifeq (,$(shell which opm 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(OPM)) ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.19.1/$(OS)-$(ARCH)-opm ;\
+	chmod +x $(OPM) ;\
+	}
+else
+OPM = $(shell which opm)
+endif
+endif
+BUNDLE_IMGS ?= $(BUNDLE_IMG)
+CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION) ifneq ($(origin CATALOG_BASE_IMG), undefined) FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG) endif
+.PHONY: catalog-build
+catalog-build: opm
+	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+
+.PHONY: catalog-push
+catalog-push: ## Push the catalog image.
+	$(MAKE) docker-push IMG=$(CATALOG_IMG)
