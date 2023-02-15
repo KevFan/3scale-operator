@@ -124,9 +124,9 @@ $(KUSTOMIZE):
 kustomize: $(KUSTOMIZE)
 
 OPERATOR_SDK = $(PROJECT_PATH)/bin/operator-sdk
-# Note: release file patterns changed after v1.18.0
+# Note: release file patterns changed after v1.22.0
 # More info https://sdk.operatorframework.io/docs/installation/
-OPERATOR_SDK_VERSION=v1.18.0
+OPERATOR_SDK_VERSION=v1.22.0
 $(OPERATOR_SDK):
 	curl -sSL https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk-${OPERATOR_SDK_VERSION}-$(ARCH)-${OS} -o $(OPERATOR_SDK)
 	chmod +x $(OPERATOR_SDK)
@@ -348,7 +348,7 @@ ifeq (,$(shell which opm 2>/dev/null))
 	@{ \
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.19.1/$(OS)-$(ARCH)-opm ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.23.0/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
 else
