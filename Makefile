@@ -4,6 +4,16 @@ VERSION ?= 0.0.1
 IMAGE_TAG_BASE ?= quay.io/3scale-operator
 # Default bundle image tag
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
+# BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
+BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+
+# USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
+# You can enable this value if you would like to use SHA Based Digests
+# To enable set flag to true
+USE_IMAGE_DIGESTS ?= false
+ifeq ($(USE_IMAGE_DIGESTS), true)
+    BUNDLE_GEN_FLAGS += --use-image-digests
+endif
 # Options for 'bundle-build'
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
@@ -114,9 +124,9 @@ $(KUSTOMIZE):
 kustomize: $(KUSTOMIZE)
 
 OPERATOR_SDK = $(PROJECT_PATH)/bin/operator-sdk
-# Note: release file patterns changed after v1.17.0
+# Note: release file patterns changed after v1.18.0
 # More info https://sdk.operatorframework.io/docs/installation/
-OPERATOR_SDK_VERSION=v1.17.0
+OPERATOR_SDK_VERSION=v1.18.0
 $(OPERATOR_SDK):
 	curl -sSL https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk-${OPERATOR_SDK_VERSION}-$(ARCH)-${OS} -o $(OPERATOR_SDK)
 	chmod +x $(OPERATOR_SDK)
@@ -203,7 +213,7 @@ bundle-image-push:
 bundle: manifests $(KUSTOMIZE) $(OPERATOR_SDK)
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 # Build the bundle image.
